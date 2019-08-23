@@ -1,0 +1,93 @@
+# ansible/site.yml
+
+---
+- hosts: rails
+  remote_user: root
+  become: yes
+  tasks:
+    - name: Update all packages to the latest version
+      apt:
+        upgrade: dist
+    - name: Add deploy user
+      user:
+        name: deploy
+        shell: /bin/bash
+    - name: Add SSH key to server for deploy user
+      authorized_key:
+        user: deploy
+        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHem8IZe6NTj8BCcKr+hQA9SZyAWp1Oortx35ckq7Y4B4rl08fBHI3SFcgoZhxxePKjR4ffjmeXmMnMObJBDj2i8Y879QVMTqd58MGzP9UnLw8l0FMc6y1jNEgfoDb3YayexoTx2IGt5SGVdg5LK7gSj0kBBx3TyUwvFLsUNa90Kma0i/tP4RMa5AOv261QYUru762Jxeh4BeRxeVi8gIgBNi3skLDz5ImXUIvWdgpz4wKIOU/MF/X7XzQv44uiQRDZlhSwjKzmYOzSQSyRTi4MhnX/yVpMua20bbBIvpj1YDebDq2drK/gUox2fMDiIymFOgsvIrHfpbIZ+Z2UisP donovanwhitworth@Donovans-MBP"
+    - name: Install Ruby dependencies
+      apt:
+        name: "{{ item }}"
+      with_items:
+        - gcc
+        - autoconf
+        - bison
+        - build-essential
+        - libssl-dev
+        - libyaml-dev
+        - libreadline6-dev
+        - zlib1g-dev
+        - libncurses5-dev
+        - libffi-dev
+        - libgdbm5
+        - libgdbm-dev
+        - sqlite3
+        - libsqlite3-dev
+        - nodejs
+    - name: Download ruby-install
+      become: no
+      get_url:
+        url: https://github.com/postmodern/ruby-install/archive/v0.7.0.tar.gz
+        dest: /home/ubuntu/ruby-install-0.7.0.tar.gz
+    - name: Extract ruby-install tarball
+      unarchive:
+        src: /home/ubuntu/ruby-install-0.7.0.tar.gz
+        dest: /home/ubuntu
+        creates: /home/ubuntu/ruby-install-0.7.0
+        remote_src: yes
+    - name: Install ruby-install
+      make:
+        chdir: /home/ubuntu/ruby-install-0.7.0
+        target: install
+    - name: Install Ruby
+      become_user: deploy
+      command: /usr/local/bin/ruby-install --no-install-deps ruby 2
+      args:
+        creates: /home/deploy/.rubies/ruby-2.6.3
+    - name: Download chruby
+      become: no
+      get_url:
+        url: https://github.com/postmodern/chruby/archive/v0.3.9.tar.gz
+        dest: /home/ubuntu/chruby-0.3.9.tar.gz
+    - name: Extract chruby tarball
+      become: no
+      unarchive:
+        src: /home/ubuntu/chruby-0.3.9.tar.gz
+        dest: /home/ubuntu
+        creates: /home/ubuntu/chruby-0.3.9
+        remote_src: yes
+    - name: Install chruby
+      make:
+        chdir: /home/ubuntu/chruby-0.3.9
+        target: install
+    - name: Load chruby for deploy user
+      lineinfile:
+        path: /home/deploy/.bashrc
+        regexp: 'chruby.sh$'
+        line: 'source /usr/local/share/chruby/chruby.sh'
+        insertbefore: BOF
+    - name: Set ruby version for deploy user
+      lineinfile:
+        path: /home/deploy/.profile
+        regexp: '^chruby'
+        line: 'chruby ruby-2.6.3'
+    - name: Install bundler
+      become_user: deploy
+      command: 'chruby-exec ruby-2.6.3 -- gem install bundler'
+      args:
+        creates: /home/deploy/.gem/ruby/2.6.3/bin/bundle
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: latest
